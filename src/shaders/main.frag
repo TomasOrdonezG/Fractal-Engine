@@ -33,9 +33,10 @@ vec3 colMap(float value)
 
 vec3 calculateColour(vec2 coord)
 {
+    float time = 1000 * u_time;
     vec2 uv = vec2(coord.x / float(resolution.x), coord.y / float(resolution.y)) - 0.5;
     uv.y *= resolution.y / float(resolution.x);
-    uv *= (-cos(u_time * 0.1) + 1.3) * 0.4;
+    uv *= (-cos(time * 0.1) + 1.3) * 0.4;
     uv = uv.yx;
     uv += vec2(0.1, 0.65);
 
@@ -45,8 +46,8 @@ vec3 calculateColour(vec2 coord)
     float sum = length(z);
     vec2 newZ;
     vec2 gyroscope = vec2(
-        sin(u_time*0.59),
-        cos(u_time*0.33)
+        sin(time*0.59),
+        cos(time*0.33)
     );
 
     int maxIterations = 40;
@@ -62,9 +63,9 @@ vec3 calculateColour(vec2 coord)
 
     vec2 dir = z - c;
     vec3 col = vec3(dir, 0.0);
-    uv.x = mod((atan(dir.y, dir.x) / PI * 0.5 + 0.5) * 6.0 + (u_time + 0.9*sin(u_time)) * 4.0, 1.0);
+    uv.x = mod((atan(dir.y, dir.x) / PI * 0.5 + 0.5) * 6.0 + (time + 0.9*sin(time)) * 4.0, 1.0);
     uv.y = mod(length(0.5*dir), 1.0);
-    col = colMap(0.2*sum - 0.1*l + 0.1*u_time).yzx;
+    col = colMap(0.2*sum - 0.1*l + 0.1*time).yzx;
     return col;
 }
 
