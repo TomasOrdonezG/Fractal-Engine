@@ -1,6 +1,8 @@
 #ifndef APP_H
 #define APP_H
 
+#define IMGUI_DEFINE_MATH_OPERATORS
+
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include <imgui/imgui.h>
@@ -29,8 +31,8 @@ public:
         glfwInit();
 
         // GLFW window hints and context creation
-        glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-        glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+        glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+        glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
         glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
         // Full-screen window
@@ -53,7 +55,7 @@ public:
 
         initImGui();
         quad.init();
-        renderer = Renderer(sceneWindow.aspectRatio);
+        renderer = Renderer(&sceneWindow);
     }
 
     ~App()
@@ -75,10 +77,6 @@ public:
 
             ImGui::Begin("Viewport", nullptr, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
             {
-                // Get window size and position
-                ImVec2 windowSize = ImGui::GetContentRegionAvail();
-                ImVec2 windowPos = ImGui::GetCursorScreenPos();
-
                 pollEvents();
 
                 // Get previous frame texture unit and bind it (this way we can use it in the scene shader)
@@ -91,7 +89,7 @@ public:
                 glClear(GL_COLOR_BUFFER_BIT);
                 
                 // Render the scene
-                renderer.renderScene(&sceneWindow, 0, &quad);
+                renderer.renderScene(0, &quad);
 
                 // Unbind current FBO and previous texture
                 glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -123,67 +121,23 @@ private:
     void gui()
     {
         ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport());
-        
+
         ImGui::Begin("Data");
-        dataGui();
+        renderer.dataGui();
         ImGui::End();
 
-        ImGui::Begin("Controls");
-        controlsMenu();
+        ImGui::Begin("Rendering");
+        renderer.renderingMenu();
+        ImGui::End();
+
+        ImGui::Begin("Fractal");
+        renderer.fractalMenu();
+        ImGui::End();
+
+        ImGui::Begin("Colour");
+        renderer.colourMenu();
         ImGui::End();
     }
-
-    void dataGui()
-    {
-        ImGui::Text("%20s: %-10.4f", "FPS", ImGui::GetIO().Framerate);
-        ImGui::Text("%20s: %-10d", "Frames sampled", renderer.renderedFrameCount);
-    }
-
-    void controlsMenu()
-    {
-        bool updated = false;
-
-        updated |= ImGui::Checkbox("Test", (bool*)&(renderer.test));
-        updated |= ImGui::Checkbox("Gamma Correction", (bool*)&(renderer.doGammaCorrection));
-        updated |= ImGui::Checkbox("Temporal Anti-Aliasing", &(renderer.doTAA));
-        
-        if (renderer.doTAA)
-        {
-            // We want this on when doing temporal anti aliasing
-            renderer.doPixelSampling = true;
-        }
-        else
-        {
-            updated |= ImGui::Checkbox("Pixel Sampling", (bool*)&(renderer.doPixelSampling));
-        }
-        
-        // Pixel sampling
-        if (renderer.doPixelSampling)
-        {
-            // Pick pixel sampling method
-            ImGui::SeparatorText("Pixel Sampling Method");
-            updated |= ImGui::RadioButton("Random point", &renderer.samplingMethod, 0); ImGui::SameLine();
-            updated |= ImGui::RadioButton("Jittered Grid", &renderer.samplingMethod, 1);
-
-            if (!renderer.doTAA)
-            {
-                // Don't give grid sampling as an option when temporal anti aliasing is on since it isn't not random
-                ImGui::SameLine();
-                updated |= ImGui::RadioButton("Grid", &renderer.samplingMethod, 2);
-            }
-            else if (renderer.samplingMethod == 2)
-            {
-                // If grid sampling, set to default random sampling method
-                renderer.samplingMethod = 0;
-            }
-
-            // Set number of pixel samples
-            updated |= ImGui::SliderInt("Samples per pixel", &(renderer.samplesPerPixel), 1, 20, renderer.samplingMethod == 1 ? "%d^2" : "%d");
-        }
-
-        if (updated) renderer.onUpdate();
-    }
-
 
     // * General app methods
 
@@ -221,7 +175,7 @@ private:
     void pollEvents()
     {
         static bool isMouseDragging = false;
-        static ImVec2 lastMousePos;
+        static ImVec2 lastMousePos, lastWindowSize;
         
         // Mouse and window attributes
         ImVec2 windowSize = ImGui::GetContentRegionAvail();
@@ -230,15 +184,17 @@ private:
         ImVec2 mousePosRelative(mousePos.x - windowPos.x, mousePos.y - windowPos.y);
         
         // Resize Window, textures, etc
-        bool windowChangedSize = (int)windowSize.x != sceneWindow.width || (int)windowSize.y != sceneWindow.height;
+        bool windowChangedSize = windowSize.x != lastWindowSize.x || windowSize.y != lastWindowSize.y;
         if (windowChangedSize)
         {
             sceneWindow.updateDimensions((int)windowSize.x, (int)windowSize.y);
+            renderer.setResolution(sceneWindow.resolution());
         }
 
         // Check if cursor is inside window
         bool mouseInsideWindow = mousePosRelative.x >= 0 && mousePosRelative.x <= windowSize.x && mousePosRelative.y >= 0 && mousePosRelative.y <= windowSize.y;
-        if (!mouseInsideWindow || !ImGui::IsWindowFocused())
+        renderer.setZoomOn(mouseInsideWindow, mousePos);
+        if (!mouseInsideWindow)
         {
             isMouseDragging = false;
             return;
@@ -246,28 +202,42 @@ private:
         
         // Mouse down and release events
         bool leftMouseClick = false;
-        ImVec2 lastClickedPos = ImGui::GetIO().MouseClickedPos[ImGuiMouseButton_Left];
-        if (ImGui::IsMouseDown(ImGuiMouseButton_Left))
+        ImVec2 lastClickedPosLeft = ImGui::GetIO().MouseClickedPos[ImGuiMouseButton_Left];
+        ImVec2 lastClickedPosLeftRelative = ImVec2(lastClickedPosLeft.x - windowPos.x, lastClickedPosLeft.y - windowPos.y);
+        bool lastLeftClickInsideWindow = lastClickedPosLeftRelative.x >= 0 && lastClickedPosLeftRelative.x <= windowSize.x && lastClickedPosLeftRelative.y >= 0 && lastClickedPosLeftRelative.y <= windowSize.y;
+        if (ImGui::IsMouseDown(ImGuiMouseButton_Left) && lastLeftClickInsideWindow)
         {
-            isMouseDragging = mousePos.x != lastClickedPos.x || mousePos.y != lastClickedPos.y;
-            lastMousePos = mousePos;
+            isMouseDragging = mousePos.x != lastClickedPosLeft.x || mousePos.y != lastClickedPosLeft.y;
         }
         else if (ImGui::IsMouseReleased(ImGuiMouseButton_Left))
         {
             isMouseDragging = false;
-            leftMouseClick = lastClickedPos.x == mousePos.x && lastClickedPos.y == mousePos.y;
+            leftMouseClick = lastClickedPosLeft.x == mousePos.x && lastClickedPosLeft.y == mousePos.y;
         }
         
-        if (leftMouseClick)
+        // Mouse click callback
+        if (leftMouseClick && ImGui::IsWindowFocused())
         {
-            // * CODE * //
+            renderer.mouseClickCallback(mousePosRelative);
         }
 
-        if (isMouseDragging)
+        // Mouse dragging callback
+        if (isMouseDragging && ImGui::IsWindowFocused())
         {
             ImVec2 dpos(mousePos.x - lastMousePos.x, mousePos.y - lastMousePos.y);
-            // * CODE * //
+            renderer.mouseDragCallback(dpos);
         }
+
+        // Mouse scrolling callback
+        float yOffset = ImGui::GetIO().MouseWheel;
+        if (yOffset)
+        {
+            renderer.mouseScrollCallback(yOffset);
+        }
+
+        // Save data for previous frame
+        lastMousePos = mousePos;
+        lastWindowSize = windowSize;
     }
 
     void initImGui()

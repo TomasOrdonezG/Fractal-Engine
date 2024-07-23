@@ -38,6 +38,11 @@ public:
         glBindTexture(GL_TEXTURE_2D, 0);
     }
 
+    glm::ivec2 resolution() const
+    {
+        return glm::ivec2(width, height);
+    }
+
 private:
 
     void initFBOs()
