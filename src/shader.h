@@ -222,7 +222,7 @@ private:
 
         if (location == -1)
         {
-            std::cerr << "Error: Variable `" << name << "` not found." << std::endl;
+            std::cerr << "Error: Uniform `" << name << "` not found." << std::endl;
             exit(1);
         }
 

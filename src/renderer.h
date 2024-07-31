@@ -65,6 +65,12 @@ public:
             defaultCenter = glm::dvec2(0.0, 0.0);
 
         break;
+        case LERP:
+
+            defaultDimensions = glm::dvec2(3.0, 2.0);
+            defaultCenter = glm::dvec2(0.0, 0.0);
+        
+        break;
         }
         
         dimensions = defaultDimensions;
@@ -112,10 +118,10 @@ public:
 
         shader.setVec2d("dimensions", dimensions);
         shader.setVec2d("centerCoords", centerCoords);
-        // shader.setVec2d("zoomOn_w", zoomOn_w);
+        shader.setVec2d("testDvec2", testDvec2);
         shader.setVec2d("scale", scale);
 
-        // shader.setDouble("zoomFactor", zoomFactor);
+        shader.setFloat("gradientDegree", gradientDegree);
     }
 
 
@@ -136,6 +142,7 @@ public:
         bool updated = false;
 
         updated |= ImGui::Checkbox("Test", &test);
+        
         updated |= ImGui::Checkbox("Gamma Correction", &doGammaCorrection);
         updated |= ImGui::Checkbox("Temporal Anti-Aliasing", &doTAA);
         
@@ -181,7 +188,13 @@ public:
         bool updated = false;
         bool reset = false;
 
-        reset |= ImGui::SliderInt("Fractal", (int*)&fractalType, 0, 1, fractalTitles[fractalType]);
+        reset |= ImGui::SliderInt("Fractal", (int*)&fractalType, 0, 2, fractalTitles[fractalType]);
+
+        if (fractalType == LERP)
+        {
+            updated |= ImGui::DragDouble2("Lerp Alpha", &testDvec2.x, 0.1 / (zoomFactor*100.0), 0.0, 0.0, "%.6f");
+        }
+
         reset |= ImGui::Button("Reset");
 
         updated |= ImGui::DragDouble2("Center coordinates", &centerCoords.x, 0.1 / (zoomFactor*100.0), 0.0, 0.0, "%.6f");
@@ -198,12 +211,43 @@ public:
         bool updated = false;
 
         updated |= ImGui::Checkbox("Smooth colouring", &smoothColouring);
-
+        updated |= ImGui::DragFloat("Gradient Degree", &gradientDegree, 0.1, 0.0, 10.0, "%.6f");
         char title[16];
+
+        // Iterate through every gradient colour
         for (int i = 0; i < gradient.size(); i++)
         {
-            sprintf(title, "%d", i);
+            sprintf(title, "##%d", i);
             updated |= ImGui::ColorEdit3(title, &(gradient[i].r));
+            ImGui::SameLine();
+
+            // Delete colour button
+            sprintf(title, "X##%d", i);
+            if (gradient.size() > 2 && ImGui::Button(title))
+            {
+                gradient.erase(gradient.begin() + i);
+                updated = true;
+            }
+            ImGui::SameLine();
+
+            // Move up and down buttons
+            sprintf(title, "##%dup", i);
+            if (ImGui::ArrowButton(title, ImGuiDir_Up) && i > 0)
+            {
+                glm::vec3 temp = gradient[i];
+                gradient[i] = gradient [i - 1];
+                gradient[i - 1] = temp;
+                updated = true;
+            }
+            ImGui::SameLine();
+            sprintf(title, "##%ddown", i);
+            if (ImGui::ArrowButton(title, ImGuiDir_Down) && i < gradient.size() - 1)
+            {
+                glm::vec3 temp = gradient[i];
+                gradient[i] = gradient [i + 1];
+                gradient[i + 1] = temp;
+                updated = true;
+            }
         }
         
         static glm::vec3 newCol(1.0, 1.0, 1.0);
@@ -259,8 +303,8 @@ private:
     bool doPixelSampling = true;
 
     // Fractal settings
-    enum FractalType { MANDELBROT, JULIA } fractalType = MANDELBROT;
-    const char* fractalTitles[2] = { "Mandelbrot", "Julia" };
+    enum FractalType { MANDELBROT, JULIA, LERP } fractalType = MANDELBROT;
+    const char* fractalTitles[3] = { "Mandelbrot", "Julia", "Lerp" };
     int maxFractalIterations = 50;
 
     glm::ivec2 resolution;
@@ -273,17 +317,21 @@ private:
     glm::dvec2 defaultDimensions;
     glm::dvec2 dimensions;
 
+    glm::dvec2 testDvec2 = glm::dvec2(0.0);
 
     // Gradient implementation
     std::vector<glm::vec3> gradient;
     int maxGradientSize = 10;
     bool smoothColouring = false;
+    float gradientDegree = 1.0;
 
     void initGradient()
     {
         // Initial gradient
-        gradient.push_back(glm::vec3(1.0, 0.8, 0.0));
-        gradient.push_back(glm::vec3(0.1, 0.1, 1.0));
+        gradient.push_back(glm::vec3(0.0, 0.0, 0.0));
+        gradient.push_back(glm::vec3(1.0, 0.0, 0.0));
+        gradient.push_back(glm::vec3(1.0, 1.0, 0.0));
+        gradient.push_back(glm::vec3(1.0, 1.0, 1.0));
     }
 
     void setGradientUniforms()

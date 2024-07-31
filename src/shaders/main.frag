@@ -30,6 +30,7 @@ uniform dvec2 zoomOn_w;
 uniform dvec2 centerCoords;
 uniform dvec2 dimensions;
 uniform dvec2 scale;
+uniform dvec2 testDvec2;
 
 uniform int fractalType;
 uniform int maxFractalIterations;
@@ -38,6 +39,7 @@ uniform int maxFractalIterations;
 uniform bool smoothColouring;
 uniform int gradientSize;
 uniform vec3 gradient[MAX_GRADIENT_SIZE];
+uniform float gradientDegree;
 
 // * Colour calculation
 vec3 RGBToHSL(vec3 rgb)
@@ -125,6 +127,8 @@ vec3 gradientValue(float a)
 {
     // `a` in [0.0, 1.0]
 
+    a = pow(a, gradientDegree);
+
     // Calculation breaks down on a == 1.0, so here's a base case
     if (a == 1.0) return gradient[gradientSize - 1];
 
@@ -132,6 +136,12 @@ vec3 gradientValue(float a)
     float offset = 1.0 / float(gradientSize - 1.0);
     int i = int(a / offset);
     float a1 = (a - i*offset) / offset;
+
+    if (test)
+    {
+        // No HSL conversion
+        return mix(gradient[i], gradient[i+1], a1);
+    }
 
     // Linear interpolate both colours based on the alpha value
     // Use HSL for better Hue mixing
@@ -155,7 +165,7 @@ vec3 colMap(dvec2 z, int iteration)
             float log_zn = log(float(dot(z, z))) / 2.0;
             float nu = log(log_zn / LN_2) / LN_2;
             float colIndex = float(iteration) + 1.0 - nu;
-            alpha = sqrt(maxFractalIterations*colIndex) / maxFractalIterations;
+            alpha = sqrt(maxFractalIterations*colIndex) / float(maxFractalIterations);
         }
         else
         {
@@ -170,85 +180,46 @@ vec3 colMap(dvec2 z, int iteration)
 }
 
 // * Fractal generation
-vec3 copiedFractalCode(dvec2 coord)
+
+int fractalRecurrence(dvec2 z, dvec2 c)
 {
-    float time = 1000 * u_time;
-    vec2 uv = vec2(coord.x / float(resolution.x), coord.y / float(resolution.y)) - 0.5;
-    uv.y *= resolution.y / float(resolution.x);
-    uv *= (-cos(time * 0.1) + 1.3) * 0.4;
-    uv = uv.yx;
-    uv += vec2(0.1, 0.65);
-
-    vec2 c = uv;
-    vec2 z = c;
-    float l = 0.0;
-    float sum = length(z);
-    vec2 newZ;
-    vec2 gyroscope = vec2(
-        sin(time*0.59),
-        cos(time*0.33)
-    );
-
-    int maxIterations = 40;
-    for (int i = 0; i < maxIterations; i++)
+    int iteration = 0;
+    while (dot(z, z) <= 4.0 && iteration < maxFractalIterations)
     {
-        c += (gyroscope.yx - 1.0)*0.01*float(i);
-        newZ = vec2(z.x*z.x - z.y*z.y, 2.0*z.x*z.y) + c;
-        sum += length(newZ - z);
-        z = newZ;
-        l = length(z);
-        if (l > 2.0) break;
+        // z_n+1 = z_n*z_n + c
+        z = dvec2(z.x*z.x - z.y*z.y, 2*z.x*z.y) + c;
+        iteration++;
     }
-
-    vec2 dir = z - c;
-    vec3 col = vec3(dir, 0.0);
-    uv.x = mod((atan(dir.y, dir.x) / PI * 0.5 + 0.5) * 6.0 + (time + 0.9*sin(time)) * 4.0, 1.0);
-    uv.y = mod(length(0.5*dir), 1.0);
-
-    float value = 0.2*sum - 0.1*l + 0.1*time;
-
-    col = vec3(
-        sin(sin(value)),
-        sin(sin(value + 0.8)),
-        sin(sin(value - 0.6))
-    );
-    
-    return col;
+    return iteration;
 }
 
 vec3 mandelbrotSet(dvec2 uv)
 {
-    // Fractal generation
-    int iteration = 0;
     dvec2 c = dvec2(uv);
     dvec2 z = dvec2(0.0);
 
-    // z_n+1 = z_n*z_n + c
-    while (dot(z, z) <= 4.0 && iteration < maxFractalIterations)
-    {
-        z = dvec2(z.x*z.x - z.y*z.y, 2*z.x*z.y) + c;
-        iteration++;
-    }
+    int iteration = fractalRecurrence(z, c);
 
-    // Black if part of the set, white otherwise
     return colMap(z, iteration);
 }
 
 vec3 juliaSet(dvec2 uv)
 {
-    // Fractal generation
-    int iteration = 0;
     dvec2 z = dvec2(uv);
     dvec2 c = dvec2(-0.5251993);
 
-    // z_n+1 = z_n*z_n + c
-    while (dot(z, z) <= 4.0 && iteration < maxFractalIterations)
-    {
-        z = dvec2(z.x*z.x - z.y*z.y, 2*z.x*z.y) + c;
-        iteration++;
-    }
+    int iteration = fractalRecurrence(z, c);
 
-    // Black if part of the set, white otherwise
+    return colMap(z, iteration);
+}
+
+vec3 mandelbrotJuliaLerp(dvec2 uv)
+{
+    dvec2 c = mix(uv, dvec2(-0.5251993), testDvec2.x);
+    dvec2 z = mix(dvec2(0.0), uv, testDvec2.y);
+
+    int iteration = fractalRecurrence(z, c);
+
     return colMap(z, iteration);
 }
 
@@ -264,12 +235,23 @@ vec3 calculateColour(vec2 coord)
     // Render fractal
     switch (fractalType)
     {
-        case 0: return     mandelbrotSet(uv); break;
-        case 1: return          juliaSet(uv); break;
-        case 2: return copiedFractalCode(uv); break;
+        case 0:  // * MANDELBROT SET
+        
+            return mandelbrotSet(uv);
+            
+        break;
+        case 1:  // * JULIA SET
+        
+            return juliaSet(uv);
+            
+        break;
+        case 2:  // * MANDELBROT-JULIA LERP
+
+            return mandelbrotJuliaLerp(uv);
+            
+        break;
     }
 }
-
 
 // * Utility functions
 float rand()
@@ -362,16 +344,6 @@ vec3 jitteredGridSample()
 
 void main()
 {
-
-    if (test)
-    {
-        float a = gl_FragCoord.x / float(resolution.x);
-        int i = int(a*gradientSize);
-        FragColour = vec4(gradient[i], 1.0);
-        // FragColour = vec4(gradientValue(a), 1.0);
-        
-        return;
-    }
 
     vec3 currentColour;
 
