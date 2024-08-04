@@ -319,7 +319,7 @@ private:
 
     glm::dvec2 testDvec2 = glm::dvec2(0.0);
 
-    // Gradient implementation
+    // * Gradient implementation
     std::vector<glm::vec3> gradient;
     int maxGradientSize = 10;
     bool smoothColouring = false;

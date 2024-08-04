@@ -14,6 +14,7 @@ class Shader
 public:
 
     GLuint ID;
+    bool validateUniform = false;
 
     Shader() {}
 
@@ -56,27 +57,56 @@ public:
         GLuint vertex = glCreateShader(GL_VERTEX_SHADER);
         glShaderSource(vertex, 1, &vShaderCode, NULL);
         glCompileShader(vertex);
-        checkErrors(vertex, "COMPILATION", "VERTEX");
+
+        // Check for vertex shader compilation errors
+        GLint success;
+        char infoLog[512];
+        glGetShaderiv(vertex, GL_COMPILE_STATUS, &success);
+        if (!success)
+        {
+            glGetShaderInfoLog(vertex, 512, NULL, infoLog);
+            std::cerr << "ERROR::VERTEX_SHADER::COMPILATION_FAILED\n" << infoLog << std::endl;
+            exit(1);
+        }
 
         // Compile fragment shader
         GLuint fragment = glCreateShader(GL_FRAGMENT_SHADER);
         glShaderSource(fragment, 1, &fShaderCode, NULL);
         glCompileShader(fragment);
-        checkErrors(fragment, "COMPILATION", "FRAGMENT");
+
+        // Check for vertex shader compilation errors
+        glGetShaderiv(fragment, GL_COMPILE_STATUS, &success);
+        if (!success)
+        {
+            glGetShaderInfoLog(fragment, 512, NULL, infoLog);
+            std::cerr << "ERROR::FRAGMENT_SHADER::COMPILATION_FAILED\n" << infoLog << std::endl;
+            exit(1);
+        }
 
         // Create shader Program
         ID = glCreateProgram();
         glAttachShader(ID, vertex);
         glAttachShader(ID, fragment);
         glLinkProgram(ID);
-        checkErrors(ID, "LINKING", "PROGRAM");
+
+        // Check for linking errors
+        glGetProgramiv(ID, GL_LINK_STATUS, &success);
+        if (!success)
+        {
+            glGetProgramInfoLog(ID, 512, NULL, infoLog);
+            std::cerr << "ERROR::PROGRAM::LINKING_FAILED\n" << infoLog << std::endl;
+            exit(1);
+        }
 
         // Cleanup
         glDeleteShader(vertex);
         glDeleteShader(fragment);
     }
 
-    void use() { glUseProgram(ID); }
+    void use()
+    {
+        glUseProgram(ID);
+    }
     
 
     // * FLOAT * //
@@ -202,25 +232,11 @@ public:
 
 private:
 
-    void checkErrors(GLuint shader, const char *type, const char *name) const
-    {
-        GLint success;
-        char infoLog[512];
-
-        glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
-        if (!success)
-        {
-            glGetShaderInfoLog(shader, 512, NULL, infoLog);
-            std::cerr << "ERROR::" << name << "_SHADER::" << type << "_FAILED\n" << infoLog << std::endl;
-            exit(1);
-        }
-    }
-
     GLint getLocation(const std::string &name) const
     {
         GLint location = glGetUniformLocation(ID, name.c_str());
 
-        if (location == -1)
+        if (location == -1 && validateUniform)
         {
             std::cerr << "Error: Uniform `" << name << "` not found." << std::endl;
             exit(1);
